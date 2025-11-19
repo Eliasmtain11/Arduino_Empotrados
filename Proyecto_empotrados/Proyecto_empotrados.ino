@@ -385,7 +385,7 @@ void button_timing() {
 
   else if (time_pressed >= 5000) {
     Serial.println("Admin");
-    if(state != ADMIN) {
+    if(state != ADMIN && state != DISTANCE && state != TEMP_HUM && state != TIME && state != ADMIN) {
       state = ADMIN;
     }
     else {
