@@ -29,6 +29,7 @@ unsigned long timer = 0;
 unsigned long inicio = 0;
 unsigned long fin = 0;
 unsigned long last_change_time = 0;    
+
 enum STATES {
   INIT = 0,
   WAIT_FOR_CLIENT,
@@ -37,6 +38,8 @@ enum STATES {
   COFFEE_FINISHED,
   ADMIN,
   DISTANCE,
+  TEMP_HUM,
+  TIME,
 
 };
 
@@ -102,7 +105,6 @@ void setup() {
   dhtThread.setInterval(DHT_INTERVAL);  
   dhtThread.enabled = false;            
   randomSeed(analogRead(A0)); 
-  attachInterrupt(digitalPinToInterrupt(BUTTON), buttonISR, CHANGE);
   state == INIT;
 }
 
@@ -132,6 +134,12 @@ void loop() {
   else if (state == DISTANCE) {
     show_distance();
   }
+  else if (state == TEMP_HUM) {
+    show_temp_hum();
+  }
+  else if (state == TIME) {
+    clock();
+  }
 }
 
 void start() {
@@ -142,6 +150,7 @@ void start() {
   if (iteracion >= 6) {
     state = WAIT_FOR_CLIENT;
     person_detected = false;
+    attachInterrupt(digitalPinToInterrupt(BUTTON), buttonISR, CHANGE);
     lcd.clear();
   }
 }
@@ -149,6 +158,7 @@ void start() {
 void wait_and_temp_hum() {
   if (!person_detected) {
     digitalWrite(LED_GREEN_PIN,LOW);
+    digitalWrite(LED_RED_PIN,LOW);
     long dist = read_distance();
     
     lcd.setCursor(0,0);
@@ -269,10 +279,13 @@ void menu_admin() {
       strcat(action, options_admin_second_row[i]);
       byte action_admin = action_from_option(action);
       if(action_admin == 0) {
-
+        state = TEMP_HUM;
       }
       else if(action_admin == 1) {
         state = DISTANCE;
+      }
+      else if(action_admin == 2) {
+        state = TIME;
       }
       lcd.clear();
     }
@@ -287,6 +300,38 @@ void show_distance() {
   lcd.print(dist);
   lcd.print("cm         ");
   if(joystick(X_AXIS)) {
+    state = ADMIN;
+    lcd.clear();
+  }
+}
+
+void show_temp_hum() {
+  float humidity = dht.readHumidity();
+  float temperature = dht.readTemperature();
+  lcd.setCursor(0,0);
+  lcd.print("Temp: ");
+  lcd.print(temperature);
+  lcd.print("C   ");
+
+  lcd.setCursor(0,1);
+  lcd.print("Humd: ");
+  lcd.print(humidity);
+  lcd.print("%   ");
+  if(joystick(X_AXIS)) {
+    state = ADMIN;
+    lcd.clear();
+  }
+}
+
+void clock() {
+  unsigned long counter = millis();
+  lcd.setCursor(4,0);
+  lcd.print("CONTADOR");
+  lcd.setCursor(7,1);
+  lcd.print(counter/SECONDS_TO_MILI);
+  lcd.print("s    ");
+
+   if(joystick(X_AXIS)) {
     state = ADMIN;
     lcd.clear();
   }
@@ -337,9 +382,16 @@ void button_timing() {
     person_detected = false;
     lcd.clear();
   }
+
   else if (time_pressed >= 5000) {
     Serial.println("Admin");
-    state = ADMIN;
+    if(state != ADMIN) {
+      state = ADMIN;
+    }
+    else {
+     state = WAIT_FOR_CLIENT;
+    person_detected = false;
+    }
     lcd.clear();
   }
 }
