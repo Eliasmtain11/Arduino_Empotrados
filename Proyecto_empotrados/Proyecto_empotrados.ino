@@ -17,6 +17,8 @@
 #define SERVICE_DURATION 5000       
 #define DHT_INTERVAL 1000          
 #define TAKE_DRINK_TIME 3000
+#define DEBOUNCE_MS 50UL
+
 LiquidCrystal lcd(9,8,7,6,5,4);
 DHT dht(DHT11PIN, DHTTYPE);
 
@@ -26,7 +28,7 @@ unsigned long last_led1_time = 0;
 unsigned long timer = 0;
 unsigned long inicio = 0;
 unsigned long fin = 0;
-
+unsigned long last_change_time = 0;    
 enum STATES {
   INIT = 0,
   WAIT_FOR_CLIENT,
@@ -53,8 +55,8 @@ byte euro[8] = {
 
 char* coffees[] = {"Cafe Solo", "Cafe Cortado", "Cafe Doble", "Cafe Premium", "Chocolate"};
 float prices[] = {1.00, 1.10, 1.25, 1.50, 2.00};
-char* options_admin[] = {"Ver Temperatura", "Ver distancia sensor", "Ver contador", "Modificar precios"};
-
+char* options_admin_first_row[] = {"Ver Temperatura", "Ver distancia ", "Ver contador", "Modificar "};
+char* options_admin_second_row[] = {"","sensor","","precios"};
 bool person_detected = false;
 bool led_1_state = false;
 volatile bool change = false;   
@@ -64,7 +66,7 @@ int last_state = 0;
 int lecture = 0;
 int i = 0;
 
-byte len = sizeof(coffees) / sizeof(coffees[0]);
+
 byte brightness;
 byte time = 0;
 byte iteracion = 0;
@@ -165,6 +167,7 @@ void wait_and_temp_hum() {
 }
 
 void coffee_menu() {
+  byte len = sizeof(coffees) / sizeof(coffees[0]);
   byte joystick_button_state = digitalRead(BUTTON_JOYSTICK);
   lecture = joystick(Y_AXIS);
   if (last_state != lecture) {
@@ -240,7 +243,7 @@ void extract_coffee() {
 void menu_admin() {
   digitalWrite(LED_RED_PIN, HIGH);
   digitalWrite(LED_GREEN_PIN, HIGH);
-
+  byte len = sizeof(options_admin_first_row) / sizeof(options_admin_first_row[0]);
   byte joystick_button_state = digitalRead(BUTTON_JOYSTICK);
   lecture = joystick(Y_AXIS);
   if (last_state != lecture) {
@@ -254,14 +257,24 @@ void menu_admin() {
       i = 0;
     }
     lcd.setCursor(0, 0);
-    lcd.print(options_admin[i]);
+    lcd.print(options_admin_first_row[i]);
+    lcd.print("                ");
+    lcd.setCursor(0,1);
+    lcd.print(options_admin_second_row[i]);    
     lcd.print("                ");
 
     if(joystick_button_state == LOW){
-      byte action_admin = action_from_option(options_admin[i]);
+      char action[32];
+      strcpy(action, options_admin_first_row[i]);
+      strcat(action, options_admin_second_row[i]);
+      byte action_admin = action_from_option(action);
       if(action_admin == 0) {
+
+      }
+      else if(action_admin == 1) {
         state = DISTANCE;
       }
+      lcd.clear();
     }
 }
 
@@ -272,9 +285,10 @@ void show_distance() {
   lcd.print("                ");
   lcd.setCursor(6, 1);
   lcd.print(dist);
-  lcd.print("m         ");
-  if(joystick(X_AXIS) == -1) {
-    state == ADMIN;
+  lcd.print("cm         ");
+  if(joystick(X_AXIS)) {
+    state = ADMIN;
+    lcd.clear();
   }
 }
 
@@ -293,28 +307,40 @@ byte action_from_option(char* accion) {
   }
 }
 
-void button_timing(){
-  if (change) {      
-    change = false; // limpiar flag
-    unsigned long time_pressed = 0;
-    int val = digitalRead(BUTTON);
+void button_timing() {
+  if (!change) {
+    return;             
+  }
+  change = false;  
 
-    if (val == LOW) {
-      inicio = millis();
-    } else {
-      fin = millis();     // botón suelto
-      time_pressed = fin - inicio;
-    }
-    
-    if(time_pressed > 2000 && time_pressed < 3000){
-      Serial.println("Servicio");
-      state = WAIT_FOR_CLIENT;
-      person_detected = false;
-    }
-    else if(time_pressed > 5000) {
-      Serial.println("Admin");
-      state = ADMIN;
-    }
+  unsigned long now = millis();
+  if (now - last_change_time < DEBOUNCE_MS) {
+    return;
+  }
+  last_change_time = now;  
+
+  int val = digitalRead(BUTTON);  
+  if (val == LOW) {
+    inicio = millis();
+    return;             
+  }
+
+  fin = millis();
+  unsigned long time_pressed = fin - inicio;
+
+  Serial.print("Tiempo pulsado (ms): ");
+  Serial.println(time_pressed);
+
+  if (time_pressed >= 2000 && time_pressed < 3000) {
+    Serial.println("Servicio");
+    state = WAIT_FOR_CLIENT;
+    person_detected = false;
+    lcd.clear();
+  }
+  else if (time_pressed >= 5000) {
+    Serial.println("Admin");
+    state = ADMIN;
+    lcd.clear();
   }
 }
 
