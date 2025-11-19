@@ -376,7 +376,7 @@ void button_timing() {
   Serial.print("Tiempo pulsado (ms): ");
   Serial.println(time_pressed);
 
-  if (time_pressed >= 2000 && time_pressed < 3000) {
+  if (time_pressed >= 2000 && time_pressed < 3000 && state != ADMIN) {
     Serial.println("Servicio");
     state = WAIT_FOR_CLIENT;
     person_detected = false;
