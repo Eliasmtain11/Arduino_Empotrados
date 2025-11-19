@@ -230,7 +230,7 @@ void extract_coffee() {
 }
 
 void menu_admin() {
-  
+
 }
 
 void button_timing(){
@@ -247,10 +247,13 @@ void button_timing(){
     }
     
     if(time_pressed > 2000 && time_pressed < 3000){
-      state == WAIT_FOR_CLIENT;
+      Serial.println("Servicio");
+      state = WAIT_FOR_CLIENT;
+      person_detected = false;
     }
     else if(time_pressed > 5000) {
-      state == ADMIN;
+      Serial.println("Admin");
+      state = ADMIN;
     }
   }
 }
