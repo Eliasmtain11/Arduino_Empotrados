@@ -34,10 +34,11 @@ enum STATES {
   COFFEE_SELECTED,
   COFFEE_FINISHED,
   ADMIN,
+  DISTANCE,
 
 };
 
-byte state = INIT;
+byte state;
 
 byte euro[8] = {
   B00110,
@@ -52,7 +53,7 @@ byte euro[8] = {
 
 char* coffees[] = {"Cafe Solo", "Cafe Cortado", "Cafe Doble", "Cafe Premium", "Chocolate"};
 float prices[] = {1.00, 1.10, 1.25, 1.50, 2.00};
-
+char* options_admin[] = {"Ver Temperatura", "Ver distancia sensor", "Ver contador", "Modificar precios"};
 
 bool person_detected = false;
 bool led_1_state = false;
@@ -67,6 +68,7 @@ byte len = sizeof(coffees) / sizeof(coffees[0]);
 byte brightness;
 byte time = 0;
 byte iteracion = 0;
+
 
 enum AXIS {
  X_AXIS = 1,
@@ -99,7 +101,7 @@ void setup() {
   dhtThread.enabled = false;            
   randomSeed(analogRead(A0)); 
   attachInterrupt(digitalPinToInterrupt(BUTTON), buttonISR, CHANGE);
-
+  state == INIT;
 }
 
 void loop() {
@@ -122,6 +124,12 @@ void loop() {
   else if (state == COFFEE_FINISHED) {
     extract_coffee();
   }
+  else if(state == ADMIN) {
+    menu_admin();
+  }
+  else if (state == DISTANCE) {
+    show_distance();
+  }
 }
 
 void start() {
@@ -139,7 +147,7 @@ void start() {
 void wait_and_temp_hum() {
   if (!person_detected) {
     digitalWrite(LED_GREEN_PIN,LOW);
-    long dist = leerDistancia();
+    long dist = read_distance();
     
     lcd.setCursor(0,0);
     lcd.print("    ESPERANDO    ");
@@ -230,7 +238,59 @@ void extract_coffee() {
 }
 
 void menu_admin() {
+  digitalWrite(LED_RED_PIN, HIGH);
+  digitalWrite(LED_GREEN_PIN, HIGH);
 
+  byte joystick_button_state = digitalRead(BUTTON_JOYSTICK);
+  lecture = joystick(Y_AXIS);
+  if (last_state != lecture) {
+    i += lecture;
+    last_state = lecture;
+    }
+    if (i < 0){
+      i = len - 1;
+    }
+    else if (i > len - 1){
+      i = 0;
+    }
+    lcd.setCursor(0, 0);
+    lcd.print(options_admin[i]);
+    lcd.print("                ");
+
+    if(joystick_button_state == LOW){
+      byte action_admin = action_from_option(options_admin[i]);
+      if(action_admin == 0) {
+        state = DISTANCE;
+      }
+    }
+}
+
+void show_distance() {
+  long dist = read_distance();
+  lcd.setCursor(4, 0);
+  lcd.print("Distance");
+  lcd.print("                ");
+  lcd.setCursor(6, 1);
+  lcd.print(dist);
+  lcd.print("m         ");
+  if(joystick(X_AXIS) == -1) {
+    state == ADMIN;
+  }
+}
+
+byte action_from_option(char* accion) {
+  if (strcmp(accion, "Ver Temperatura") == 0) {
+    return 0;
+  }
+  else if (strcmp(accion, "Ver distancia sensor") == 0) {
+    return 1;
+  }
+  else if (strcmp(accion, "Ver contador") == 0) {
+    return 2;
+  }
+  else if (strcmp(accion, "Modificar precios") == 0) {
+    return 3;
+  }
 }
 
 void button_timing(){
@@ -308,9 +368,9 @@ bool temporizador(unsigned long &last, unsigned long interval) {
   return false;
 }
 
-long leerDistancia() {
-  long duracion;
-  float distancia;
+long read_distance() {
+  long duration;
+  float distance;
 
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
@@ -318,14 +378,14 @@ long leerDistancia() {
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
 
-  duracion = pulseIn(ECHO_PIN, HIGH, 30000); // timeout de 30 ms
+  duration = pulseIn(ECHO_PIN, HIGH, 30000); // timeout de 30 ms
 
-  if (duracion == 0) {
+  if (duration == 0) {
     return -1;
   }
-  distancia = duracion * 0.0343f / 2.0f;
+  distance = duration * 0.0343f / 2.0f;
 
-  return distancia;  
+  return distance;  
 }
 
 int joystick(byte axis) {
