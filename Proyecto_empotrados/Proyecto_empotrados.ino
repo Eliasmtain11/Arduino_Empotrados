@@ -1,6 +1,7 @@
 #include <LiquidCrystal.h>
 #include "DHT.h"
 #include <Thread.h>
+#include <avr/wdt.h>
 
 #define DHTTYPE DHT11 
 #define DHT11PIN A5
@@ -17,7 +18,8 @@
 #define SERVICE_DURATION 5000       
 #define DHT_INTERVAL 1000          
 #define TAKE_DRINK_TIME 3000
-#define DEBOUNCE_MS 50UL
+#define MIN_VALID_TIME_PRESSED 500UL
+#define SHOW_DISTANCE_TIME 300
 
 LiquidCrystal lcd(9,8,7,6,5,4);
 DHT dht(DHT11PIN, DHTTYPE);
@@ -57,6 +59,28 @@ byte euro[8] = {
   B00000
 };
 
+byte arrow_up[8] = {
+  B00100,
+  B01110,
+  B10101,
+  B00100,
+  B00100,
+  B00100,
+  B00100,
+  B00100
+};
+
+byte arrow_down[8] = {
+  B00100,
+  B00100,
+  B00100,
+  B00100,
+  B00100,
+  B10101,
+  B01110,
+  B00100
+};
+
 char* coffees[] = {"Cafe Solo", "Cafe Cortado", "Cafe Doble", "Cafe Premium", "Chocolate"};
 float prices[] = {1.00, 1.10, 1.25, 1.50, 2.00};
 char* options_admin_first_row[] = {"Ver Temperatura", "Ver distancia ", "Ver contador", "Modificar "};
@@ -66,9 +90,10 @@ float new_price = 0;
 volatile bool change = false;   
 volatile bool pressed = false;  
 bool modify_selected = false;
-bool modify_price = false;
+bool modifing_price = false;
 bool person_detected = false;
 bool led_1_state = false;
+bool block_left = false;
 
 int last_state = 0;
 int lecture = 0;
@@ -94,8 +119,13 @@ void joystickISR() {
 }
 
 void setup() {
+  wdt_disable();
+  wdt_enable(WDTO_2S);
+
   lcd.begin(16,2);
   lcd.createChar(0, euro);  
+  lcd.createChar(1, arrow_up); 
+  lcd.createChar(2, arrow_down); 
   Serial.begin(9600);
   dht.begin();
 
@@ -115,6 +145,7 @@ void setup() {
   dhtThread.enabled = false;            
   randomSeed(analogRead(A0)); 
   state == INIT;
+  
 }
 
 void loop() {
@@ -155,6 +186,7 @@ void loop() {
   else if (state == PRICES) {
     menu_prices();
   }
+  wdt_reset();
 }
 
 void start() {
@@ -297,6 +329,7 @@ void menu_admin() {
         state = TEMP_HUM;
       }
       else if(action_admin == 1) {
+        timer = millis();
         state = DISTANCE;
       }
       else if(action_admin == 2) {
@@ -312,6 +345,7 @@ void menu_admin() {
 void menu_prices() {
   byte len = sizeof(coffees) / sizeof(coffees[0]);
   lecture = joystick(Y_AXIS);
+  int x = joystick(X_AXIS);
 
   if(!modify_selected) {
     if (last_state != lecture) {
@@ -330,17 +364,24 @@ void menu_prices() {
     lcd.setCursor(11, 1);
     lcd.print(prices[j]);
     lcd.write(byte(0));
-
-    if(joystick(X_AXIS) == -1) {
-    state = ADMIN;
-    lcd.clear();
+    
+  if (block_left) {
+    if (x == 0) {
+      block_left = false; 
+    }
+  } 
+  else {
+      if (x == -1) {
+        state = ADMIN;
+        lcd.clear();
+      }
     }
   }
 
   if(modify_selected){
     new_price = modify_price(coffees[j],new_price);
-    if(modify_price){
-      modify_price = false;
+    if(modifing_price){
+      modifing_price = false;
       prices[j] = new_price;
     }
   }
@@ -377,35 +418,43 @@ float modify_price(char* type, float price) {
   lcd.setCursor(3,0);
   lcd.print(type);
   lcd.print("              ");
-  lcd.setCursor(7,1);
+  lcd.setCursor(4,1);
+  lcd.write(byte(2));
+  lcd.setCursor(6,1);
   lcd.print(price);
+  lcd.print(" ");
+  lcd.write(byte(1));
   lcd.print("              ");
 
   if(pressed){
     pressed = false;
     modify_selected = false;
+    modifing_price = true;
     lcd.clear();
   }
   else if(joystick(X_AXIS) == -1) {
     state = PRICES;
     modify_selected = false;
+    block_left = true;
     lcd.clear();
   }
   return price;
 }
 
 void show_distance() {
-  long dist = read_distance();
-  lcd.setCursor(4, 0);
-  lcd.print("Distance");
-  lcd.print("                ");
-  lcd.setCursor(6, 1);
-  if(dist == -1){
-    lcd.print("None           ");
-  }
-  else {
-    lcd.print(dist);
-    lcd.print("cm         ");
+  if(temporizador(timer,SHOW_DISTANCE_TIME)){
+    long dist = read_distance();
+    lcd.setCursor(4, 0);
+    lcd.print("Distance");
+    lcd.print("                ");
+    lcd.setCursor(6, 1);
+    if(dist == -1){
+      lcd.print("None           ");
+    }
+    else {
+      lcd.print(dist);
+      lcd.print("cm         ");
+    }
   }
 
   if(joystick(X_AXIS) == -1) {
@@ -466,13 +515,7 @@ void button_timing() {
     return;             
   }
   change = false;  
-
-  unsigned long now = millis();
-  if (now - last_change_time < DEBOUNCE_MS) {
-    return;
-  }
-  last_change_time = now;  
-
+  
   int val = digitalRead(BUTTON);  
   if (val == LOW) {
     inicio = millis();
@@ -485,7 +528,8 @@ void button_timing() {
   Serial.print("Tiempo pulsado (ms): ");
   Serial.println(time_pressed);
 
-  if (time_pressed >= 2000 && time_pressed < 3000 && state != ADMIN) {
+if(time_pressed > MIN_VALID_TIME_PRESSED) {
+    if (time_pressed >= 2000 && time_pressed < 3000 && state != ADMIN) {
     Serial.println("Servicio");
     state = WAIT_FOR_CLIENT;
     person_detected = false;
@@ -495,7 +539,7 @@ void button_timing() {
 
   else if (time_pressed >= 5000) {
     Serial.println("Admin");
-    if(state != ADMIN && state != DISTANCE && state != TEMP_HUM && state != TIME && state != ADMIN) {
+    if(state != ADMIN && state != DISTANCE && state != TEMP_HUM && state != TIME && state != PRICES) {
       state = ADMIN;
       i = 0;
     }
@@ -506,6 +550,8 @@ void button_timing() {
     }
     lcd.clear();
   }
+}
+
 }
 
 void dhtCallback() {
