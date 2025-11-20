@@ -10,7 +10,7 @@
 #define X_JOYSTICK A1
 #define LED_RED_PIN 11
 #define LED_GREEN_PIN 10
-#define BUTTON_JOYSTICK 12
+#define BUTTON_JOYSTICK 3
 #define BUTTON 2
 #define SECONDS_TO_MILI 1000UL
 #define LED_INTERVAL 500            
@@ -40,7 +40,8 @@ enum STATES {
   DISTANCE,
   TEMP_HUM,
   TIME,
-
+  PRICES,
+  MODIFY
 };
 
 byte state;
@@ -60,15 +61,19 @@ char* coffees[] = {"Cafe Solo", "Cafe Cortado", "Cafe Doble", "Cafe Premium", "C
 float prices[] = {1.00, 1.10, 1.25, 1.50, 2.00};
 char* options_admin_first_row[] = {"Ver Temperatura", "Ver distancia ", "Ver contador", "Modificar "};
 char* options_admin_second_row[] = {"","sensor","","precios"};
+float new_price = 0;
+
+volatile bool change = false;   
+volatile bool pressed = false;  
+bool modify_selected = false;
+bool modify_price = false;
 bool person_detected = false;
 bool led_1_state = false;
-volatile bool change = false;   
-
 
 int last_state = 0;
 int lecture = 0;
 int i = 0;
-
+int j = 0;
 
 byte brightness;
 byte time = 0;
@@ -82,6 +87,10 @@ enum AXIS {
 
 void buttonISR() {
   change = true;   
+}
+
+void joystickISR() {
+  pressed = true;   
 }
 
 void setup() {
@@ -113,6 +122,9 @@ void loop() {
   if (dhtThread.shouldRun()) {
     dhtThread.run();
   }
+  if (state != MENU_COFFEE || state != ADMIN || state != PRICES) {
+    pressed = false;
+  }
   if (state == INIT) {
     start();
   }
@@ -140,6 +152,9 @@ void loop() {
   else if (state == TIME) {
     clock();
   }
+  else if (state == PRICES) {
+    menu_prices();
+  }
 }
 
 void start() {
@@ -150,8 +165,9 @@ void start() {
   if (iteracion >= 6) {
     state = WAIT_FOR_CLIENT;
     person_detected = false;
-    attachInterrupt(digitalPinToInterrupt(BUTTON), buttonISR, CHANGE);
     lcd.clear();
+    attachInterrupt(digitalPinToInterrupt(BUTTON), buttonISR, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(BUTTON_JOYSTICK), joystickISR, FALLING);
   }
 }
 
@@ -178,7 +194,6 @@ void wait_and_temp_hum() {
 
 void coffee_menu() {
   byte len = sizeof(coffees) / sizeof(coffees[0]);
-  byte joystick_button_state = digitalRead(BUTTON_JOYSTICK);
   lecture = joystick(Y_AXIS);
   if (last_state != lecture) {
         i += lecture;
@@ -197,8 +212,8 @@ void coffee_menu() {
       lcd.print((prices[i]));
       lcd.write(byte(0));
 
-      if(joystick_button_state == LOW){
-
+      if(pressed == true){
+        pressed = false;
         state = COFFEE_SELECTED;
 
         time = random(4,8);
@@ -254,7 +269,6 @@ void menu_admin() {
   digitalWrite(LED_RED_PIN, HIGH);
   digitalWrite(LED_GREEN_PIN, HIGH);
   byte len = sizeof(options_admin_first_row) / sizeof(options_admin_first_row[0]);
-  byte joystick_button_state = digitalRead(BUTTON_JOYSTICK);
   lecture = joystick(Y_AXIS);
   if (last_state != lecture) {
     i += lecture;
@@ -273,7 +287,8 @@ void menu_admin() {
     lcd.print(options_admin_second_row[i]);    
     lcd.print("                ");
 
-    if(joystick_button_state == LOW){
+    if(pressed == true){
+      pressed = false;
       char action[32];
       strcpy(action, options_admin_first_row[i]);
       strcat(action, options_admin_second_row[i]);
@@ -287,8 +302,96 @@ void menu_admin() {
       else if(action_admin == 2) {
         state = TIME;
       }
+      else if (action_admin == 3) {
+        state = PRICES;
+      }
       lcd.clear();
     }
+}
+
+void menu_prices() {
+  byte len = sizeof(coffees) / sizeof(coffees[0]);
+  lecture = joystick(Y_AXIS);
+
+  if(!modify_selected) {
+    if (last_state != lecture) {
+      j += lecture;
+      last_state = lecture;
+    }
+    if (j < 0){
+      j = len - 1;
+    }
+    else if (j > len - 1){
+      j = 0;
+    }
+    lcd.setCursor(0, 0);
+    lcd.print(coffees[j]);
+    lcd.print("                ");
+    lcd.setCursor(11, 1);
+    lcd.print(prices[j]);
+    lcd.write(byte(0));
+
+    if(joystick(X_AXIS) == -1) {
+    state = ADMIN;
+    lcd.clear();
+    }
+  }
+
+  if(modify_selected){
+    new_price = modify_price(coffees[j],new_price);
+    if(modify_price){
+      modify_price = false;
+      prices[j] = new_price;
+    }
+  }
+  else if(pressed){
+    pressed = false;
+    modify_selected = true;
+    new_price = prices[j];
+    lcd.clear();
+  }
+
+}
+
+float modify_price(char* type, float price) {
+  byte len = sizeof(coffees) / sizeof(coffees[0]);
+  lecture = joystick(Y_AXIS);
+  if (last_state != lecture) {
+    if(lecture == -1){
+      price += 0.05;
+    }
+    else if(lecture == 1){
+      price -= 0.05;
+      if(price < 0.00) {
+        price = 0.00;
+      }
+    }
+    last_state = lecture;
+    }
+    if (j < 0){
+      j = len - 1;
+    }
+    else if (j > len - 1){
+      j = 0;
+    }
+  lcd.setCursor(3,0);
+  lcd.print(type);
+  lcd.print("              ");
+  lcd.setCursor(7,1);
+  lcd.print(price);
+  lcd.print("              ");
+
+  if(pressed){
+    pressed = false;
+    modify_selected = false;
+    lcd.clear();
+  }
+  else if(joystick(X_AXIS) == -1) {
+    state = PRICES;
+    modify_selected = false;
+    lcd.clear();
+  }
+  return price;
 }
 
 void show_distance() {
@@ -297,9 +400,15 @@ void show_distance() {
   lcd.print("Distance");
   lcd.print("                ");
   lcd.setCursor(6, 1);
-  lcd.print(dist);
-  lcd.print("cm         ");
-  if(joystick(X_AXIS)) {
+  if(dist == -1){
+    lcd.print("None           ");
+  }
+  else {
+    lcd.print(dist);
+    lcd.print("cm         ");
+  }
+
+  if(joystick(X_AXIS) == -1) {
     state = ADMIN;
     lcd.clear();
   }
@@ -317,7 +426,7 @@ void show_temp_hum() {
   lcd.print("Humd: ");
   lcd.print(humidity);
   lcd.print("%   ");
-  if(joystick(X_AXIS)) {
+  if(joystick(X_AXIS) == -1) {
     state = ADMIN;
     lcd.clear();
   }
@@ -331,7 +440,7 @@ void clock() {
   lcd.print(counter/SECONDS_TO_MILI);
   lcd.print("s    ");
 
-   if(joystick(X_AXIS)) {
+   if(joystick(X_AXIS) == -1) {
     state = ADMIN;
     lcd.clear();
   }
@@ -380,6 +489,7 @@ void button_timing() {
     Serial.println("Servicio");
     state = WAIT_FOR_CLIENT;
     person_detected = false;
+    i = 0;
     lcd.clear();
   }
 
@@ -387,10 +497,12 @@ void button_timing() {
     Serial.println("Admin");
     if(state != ADMIN && state != DISTANCE && state != TEMP_HUM && state != TIME && state != ADMIN) {
       state = ADMIN;
+      i = 0;
     }
     else {
-     state = WAIT_FOR_CLIENT;
-    person_detected = false;
+      state = WAIT_FOR_CLIENT;
+      person_detected = false;
+      i = 0;
     }
     lcd.clear();
   }
@@ -478,7 +590,7 @@ int joystick(byte axis) {
   }
 
   if(value <= 400) {
-    n = -1;
+    n = 1;
   }
 
   else if(value > 400 && value <= 900) {
@@ -486,7 +598,7 @@ int joystick(byte axis) {
   }
 
   else if(value > 900) {
-    n = 1;
+    n = -1;
   }
   return n;
 }
