@@ -181,8 +181,7 @@ Incluye un diagrama creado en Fritzing o Tinkercad mostrando todas las conexione
 - Botón externo  
 - DHT11  
 - HC-SR04  
-
-*(Inserta aquí tu imagen cuando la tengas)*
+<img width="624" alt="imagen" src="https://github.com/user-attachments/assets/9c5ce90a-8a6a-49a2-b314-4e8a3cb46602" />
 
 ---
 
@@ -191,7 +190,8 @@ Incluye un diagrama creado en Fritzing o Tinkercad mostrando todas las conexione
 Incluye un vídeo explicando funcionamiento y lógica del sistema.  
 
 **Enlace al vídeo:**  
-[https://youtu.be/TU_LINK_AQUI](https://youtu.be/TU_LINK_AQUI)
+[[https://youtu.be/TU_LINK_AQUI](https://youtu.be/TU_LINK_AQUI)](https://img.youtube.com/vi/IHMvAtmqGPg/maxresdefault.jpg
+)
 
 ---
 
