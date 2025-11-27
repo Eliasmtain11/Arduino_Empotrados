@@ -14,17 +14,17 @@
 #define BUTTON_JOYSTICK 3
 #define BUTTON 2
 #define SECONDS_TO_MILI 1000UL
-#define LED_INTERVAL 500            
-#define SERVICE_DURATION 5000       
-#define DHT_INTERVAL 1000          
-#define TAKE_DRINK_TIME 3000
-#define MIN_VALID_TIME_PRESSED 500UL
-#define SHOW_DISTANCE_TIME 300
+#define LED_INTERVAL 500            // Intervalo parpadeo LED inicio
+#define SERVICE_DURATION 5000       // Tiempo de "servicio" viendo temp/hum
+#define DHT_INTERVAL 1000           // Periodo del thread DHT
+#define TAKE_DRINK_TIME 3000        // Tiempo para retirar la bebida
+#define MIN_VALID_TIME_PRESSED 500UL// Mínimo para considerar pulsación
+#define SHOW_DISTANCE_TIME 300      // Frecuencia refresco distancia
 
 LiquidCrystal lcd(9,8,7,6,5,4);
 DHT dht(DHT11PIN, DHTTYPE);
 
-Thread dhtThread;
+Thread dhtThread;                   // Thread cooperativo para DHT
 
 unsigned long last_led1_time = 0;
 unsigned long timer = 0;
@@ -32,6 +32,7 @@ unsigned long inicio = 0;
 unsigned long fin = 0;
 unsigned long last_change_time = 0;    
 
+// Máquina de estados principal
 enum STATES {
   INIT = 0,
   WAIT_FOR_CLIENT,
@@ -48,6 +49,7 @@ enum STATES {
 
 byte state;
 
+// Caracteres personalizados LCD
 byte euro[8] = {
   B00110,
   B01001,
@@ -81,46 +83,52 @@ byte arrow_down[8] = {
   B00100
 };
 
+// Cafés y precios
 char* coffees[] = {"Cafe Solo", "Cafe Cortado", "Cafe Doble", "Cafe Premium", "Chocolate"};
 float prices[] = {1.00, 1.10, 1.25, 1.50, 2.00};
+
+// Menú admin
 char* options_admin_first_row[] = {"Ver Temperatura", "Ver distancia ", "Ver contador", "Modificar "};
 char* options_admin_second_row[] = {"","sensor","","precios"};
 float new_price = 0;
 
-volatile bool change = false;   
-volatile bool pressed = false;  
+// Flags e índices
+volatile bool change = false;       // Flag botón de servicio
+volatile bool pressed = false;      // Flag botón joystick
 bool modify_selected = false;
 bool modifing_price = false;
 bool person_detected = false;
 bool led_1_state = false;
 bool block_left = false;
 
-int last_state = 0;
+int last_state = 0;                 // Último movimiento joystick
 int lecture = 0;
-int i = 0;
-int j = 0;
+int i = 0;                          // Índice menús
+int j = 0;                          // Índice precios
 
 byte brightness;
-byte time = 0;
+byte time = 0;                      // "Duración" preparación café
 byte iteracion = 0;
 
-
+// Ejes joystick
 enum AXIS {
  X_AXIS = 1,
  Y_AXIS = 2
 };
 
+// ISR botón servicio
 void buttonISR() {
   change = true;   
 }
 
+// ISR botón joystick
 void joystickISR() {
   pressed = true;   
 }
 
 void setup() {
   wdt_disable();
-  wdt_enable(WDTO_2S);
+  wdt_enable(WDTO_2S);              // Watchdog a 2 s
 
   lcd.begin(16,2);
   lcd.createChar(0, euro);  
@@ -140,22 +148,28 @@ void setup() {
   pinMode(Y_JOYSTICK, INPUT);
   pinMode(X_JOYSTICK, INPUT);
 
+  // Configuración thread DHT
   dhtThread.onRun(dhtCallback); 
   dhtThread.setInterval(DHT_INTERVAL);  
   dhtThread.enabled = false;            
   randomSeed(analogRead(A0)); 
-  state == INIT;
-  
+
+  state == INIT;                       // Comparación, no asignación
 }
 
 void loop() {
-  button_timing();
-  if (dhtThread.shouldRun()) {
+  button_timing();                     // Gestiona pulsaciones largas
+
+  if (dhtThread.shouldRun()) {         // Ejecuta thread DHT si toca
     dhtThread.run();
   }
+
+  // Limpia pressed fuera de estos estados
   if (state != MENU_COFFEE || state != ADMIN || state != PRICES) {
     pressed = false;
   }
+
+  // Máquina de estados
   if (state == INIT) {
     start();
   }
@@ -186,14 +200,17 @@ void loop() {
   else if (state == PRICES) {
     menu_prices();
   }
-  wdt_reset();
+
+  wdt_reset();                         // Evita reset por watchdog
 }
 
+// Pantalla de carga inicial
 void start() {
   lcd.setCursor(0,0);
   lcd.print("CARGANDO...      ");
   parpadear_led();
 
+  // Tras varias iteraciones pasa a esperar cliente
   if (iteracion >= 6) {
     state = WAIT_FOR_CLIENT;
     person_detected = false;
@@ -203,6 +220,7 @@ void start() {
   }
 }
 
+// Espera cliente + detección por ultrasonidos
 void wait_and_temp_hum() {
   if (!person_detected) {
     digitalWrite(LED_GREEN_PIN,LOW);
@@ -214,19 +232,21 @@ void wait_and_temp_hum() {
     lcd.setCursor(0,1);
     lcd.print("     CLIENTE     ");
 
+    // Cliente detectado
     if (dist > 0 && dist < 100) {
-    timer = millis();  
-    person_detected = true;
-    dhtThread.enabled = true;
-    i = 0;            
-    lcd.clear();
+      timer = millis();  
+      person_detected = true;
+      dhtThread.enabled = true;       // Activa thread DHT
+      i = 0;            
+      lcd.clear();
     }
   }
 }
 
+// Menú de selección de café
 void coffee_menu() {
   byte len = sizeof(coffees) / sizeof(coffees[0]);
-  lecture = joystick(Y_AXIS);
+  lecture = joystick(Y_AXIS);        // Movimiento vertical
   if (last_state != lecture) {
         i += lecture;
         last_state = lecture;
@@ -242,13 +262,14 @@ void coffee_menu() {
       lcd.print("                ");
       lcd.setCursor(11, 1);
       lcd.print((prices[i]));
-      lcd.write(byte(0));
+      lcd.write(byte(0));            // Símbolo euro
 
+      // Pulsar joystick confirma selección
       if(pressed == true){
         pressed = false;
         state = COFFEE_SELECTED;
 
-        time = random(4,8);
+        time = random(4,8);          // Tiempo pseudo-aleatorio
         brightness = 0;
         analogWrite(LED_GREEN_PIN, brightness);
 
@@ -258,6 +279,7 @@ void coffee_menu() {
       }
 }
 
+// Animación de preparación (fade LED verde)
 void preprare_coffee() {
 
   unsigned long total_ms = (unsigned long)time * SECONDS_TO_MILI; 
@@ -283,6 +305,7 @@ void preprare_coffee() {
   }
 }
 
+// Mensaje "retire bebida" y retorno a espera
 void extract_coffee() {
   if(!(temporizador(timer,TAKE_DRINK_TIME))) {
     lcd.setCursor(5,0);
@@ -297,6 +320,7 @@ void extract_coffee() {
   }
 }
 
+// Menú de administración
 void menu_admin() {
   digitalWrite(LED_RED_PIN, HIGH);
   digitalWrite(LED_GREEN_PIN, HIGH);
@@ -319,6 +343,7 @@ void menu_admin() {
     lcd.print(options_admin_second_row[i]);    
     lcd.print("                ");
 
+    // Selección de opción admin
     if(pressed == true){
       pressed = false;
       char action[32];
@@ -342,11 +367,13 @@ void menu_admin() {
     }
 }
 
+// Menú de precios
 void menu_prices() {
   byte len = sizeof(coffees) / sizeof(coffees[0]);
   lecture = joystick(Y_AXIS);
   int x = joystick(X_AXIS);
 
+  // Selección de café a modificar
   if(!modify_selected) {
     if (last_state != lecture) {
       j += lecture;
@@ -365,12 +392,13 @@ void menu_prices() {
     lcd.print(prices[j]);
     lcd.write(byte(0));
     
-  if (block_left) {
-    if (x == 0) {
-      block_left = false; 
-    }
-  } 
-  else {
+    // Joystick izquierda vuelve a admin (con bloqueo)
+    if (block_left) {
+      if (x == 0) {
+        block_left = false; 
+      }
+    } 
+    else {
       if (x == -1) {
         state = ADMIN;
         lcd.clear();
@@ -378,6 +406,7 @@ void menu_prices() {
     }
   }
 
+  // Modo modificación precio
   if(modify_selected){
     new_price = modify_price(coffees[j],new_price);
     if(modifing_price){
@@ -385,6 +414,7 @@ void menu_prices() {
       prices[j] = new_price;
     }
   }
+  // Entra a modificar al pulsar
   else if(pressed){
     pressed = false;
     modify_selected = true;
@@ -394,6 +424,7 @@ void menu_prices() {
 
 }
 
+// Ajuste de precio con joystick vertical
 float modify_price(char* type, float price) {
   byte len = sizeof(coffees) / sizeof(coffees[0]);
   lecture = joystick(Y_AXIS);
@@ -419,19 +450,21 @@ float modify_price(char* type, float price) {
   lcd.print(type);
   lcd.print("              ");
   lcd.setCursor(4,1);
-  lcd.write(byte(2));
+  lcd.write(byte(2));                // Flecha abajo
   lcd.setCursor(6,1);
   lcd.print(price);
   lcd.print(" ");
-  lcd.write(byte(1));
+  lcd.write(byte(1));                // Flecha arriba
   lcd.print("              ");
 
+  // Pulsar guarda nuevo precio
   if(pressed){
     pressed = false;
     modify_selected = false;
     modifing_price = true;
     lcd.clear();
   }
+  // Izquierda: salir sin guardar
   else if(joystick(X_AXIS) == -1) {
     state = PRICES;
     modify_selected = false;
@@ -441,6 +474,7 @@ float modify_price(char* type, float price) {
   return price;
 }
 
+// Muestra distancia medida
 void show_distance() {
   if(temporizador(timer,SHOW_DISTANCE_TIME)){
     long dist = read_distance();
@@ -457,12 +491,14 @@ void show_distance() {
     }
   }
 
+  // Izquierda vuelve a admin
   if(joystick(X_AXIS) == -1) {
     state = ADMIN;
     lcd.clear();
   }
 }
 
+// Muestra temperatura y humedad (modo admin)
 void show_temp_hum() {
   float humidity = dht.readHumidity();
   float temperature = dht.readTemperature();
@@ -481,6 +517,7 @@ void show_temp_hum() {
   }
 }
 
+// "Reloj" simple con millis
 void clock() {
   unsigned long counter = millis();
   lcd.setCursor(4,0);
@@ -495,6 +532,7 @@ void clock() {
   }
 }
 
+// Traduce texto de menú admin a código
 byte action_from_option(char* accion) {
   if (strcmp(accion, "Ver Temperatura") == 0) {
     return 0;
@@ -510,6 +548,7 @@ byte action_from_option(char* accion) {
   }
 }
 
+// Mide duración pulsación del botón servicio
 void button_timing() {
   if (!change) {
     return;             
@@ -528,38 +567,40 @@ void button_timing() {
   Serial.print("Tiempo pulsado (ms): ");
   Serial.println(time_pressed);
 
-if(time_pressed > MIN_VALID_TIME_PRESSED) {
+  if(time_pressed > MIN_VALID_TIME_PRESSED) {
+    // Pulsación media: servicio normal
     if (time_pressed >= 2000 && time_pressed < 3000 && state != ADMIN) {
-    Serial.println("Servicio");
-    state = WAIT_FOR_CLIENT;
-    person_detected = false;
-    i = 0;
-    lcd.clear();
-  }
-
-  else if (time_pressed >= 5000) {
-    Serial.println("Admin");
-    if(state != ADMIN && state != DISTANCE && state != TEMP_HUM && state != TIME && state != PRICES) {
-      state = ADMIN;
-      i = 0;
-    }
-    else {
+      Serial.println("Servicio");
       state = WAIT_FOR_CLIENT;
       person_detected = false;
       i = 0;
+      lcd.clear();
     }
-    lcd.clear();
+    // Pulsación larga: entra/sale de admin
+    else if (time_pressed >= 5000) {
+      Serial.println("Admin");
+      if(state != ADMIN && state != DISTANCE && state != TEMP_HUM && state != TIME && state != PRICES) {
+        state = ADMIN;
+        i = 0;
+      }
+      else {
+        state = WAIT_FOR_CLIENT;
+        person_detected = false;
+        i = 0;
+      }
+      lcd.clear();
+    }
   }
 }
 
-}
-
+// Callback del thread DHT
 void dhtCallback() {
   if (!person_detected) {
     dhtThread.enabled = false;
     return;
   }
   
+  // Tras SERVICE_DURATION pasa al menú cafés
   if (temporizador(timer, SERVICE_DURATION)) {
     state = MENU_COFFEE;
     dhtThread.enabled = false;
@@ -579,9 +620,9 @@ void dhtCallback() {
   lcd.print("Humd: ");
   lcd.print(humidity);
   lcd.print("%   ");
-
 }
 
+// Parpadeo LED rojo en INIT
 void parpadear_led() {
   if (temporizador(last_led1_time, LED_INTERVAL)) {
     led_1_state = !led_1_state;
@@ -595,6 +636,7 @@ void parpadear_led() {
 
 }
 
+// Temporizador no bloqueante genérico
 bool temporizador(unsigned long &last, unsigned long interval) {
   unsigned long now = millis();
   if (now - last >= interval) {
@@ -604,6 +646,7 @@ bool temporizador(unsigned long &last, unsigned long interval) {
   return false;
 }
 
+// Lectura distancia por ultrasonidos
 long read_distance() {
   long duration;
   float distance;
@@ -614,7 +657,7 @@ long read_distance() {
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
 
-  duration = pulseIn(ECHO_PIN, HIGH, 30000); // timeout de 30 ms
+  duration = pulseIn(ECHO_PIN, HIGH, 30000); // timeout 30 ms
 
   if (duration == 0) {
     return -1;
@@ -624,6 +667,7 @@ long read_distance() {
   return distance;  
 }
 
+// Lectura joystick y discretización a -1,0,1
 int joystick(byte axis) {
   int value = 0;
   int n = 0;
@@ -638,11 +682,9 @@ int joystick(byte axis) {
   if(value <= 400) {
     n = 1;
   }
-
   else if(value > 400 && value <= 900) {
     n = 0;
   }
-
   else if(value > 900) {
     n = -1;
   }
