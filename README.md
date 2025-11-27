@@ -190,8 +190,8 @@ Incluye un diagrama creado en Fritzing o Tinkercad mostrando todas las conexione
 Incluye un vídeo explicando funcionamiento y lógica del sistema.  
 
 **Enlace al vídeo:**  
-[[https://youtu.be/TU_LINK_AQUI](https://youtu.be/TU_LINK_AQUI)](https://img.youtube.com/vi/IHMvAtmqGPg/maxresdefault.jpg
-)
+[![Ver en YouTube](https://img.youtube.com/vi/IHMvAtmqGPg/maxresdefault.jpg)](https://youtube.com/shorts/IHMvAtmqGPg)
+
 
 ---
 
