@@ -2,200 +2,137 @@
 
 ## Introducción
 
-El objetivo de la práctica es crear una **máquina expendedora** totalmente funcional usando un Arduino Uno.  
-El sistema integra sensores, actuadores e interacción con el usuario mediante una **máquina de estados**.  
-Todo se controla sin `delay()` para mantener el sistema reactivo, usando **millis()**, **interrupciones**, **threads cooperativos** y **watchdog**.
+El objetivo de la práctica es crear una **máquina expendedora**.  
+El sistema integra varios componentes (sensores, actuadores y una interfaz de usuario) y se organiza mediante una **máquina de estados**, evitando el uso de `delay()` para mantener el programa siempre reactivo.
 
----
-
-## Arquitectura general
+## Arquitectura
 
 Los **componentes principales** del sistema son:
 
-- LCD 16x2  
-- Joystick con pulsador  
-- LED verde  
-- LED rojo  
-- Botón externo  
-- Sensor DHT11  
-- Sensor HC-SR04  
-- Arduino Uno
-
----
+- `LCD 16x2`  
+- `Joystick`  
+- `LED verde`  
+- `LED rojo`  
+- `Botón` externo  
+- `Sensor de temperatura y humedad (DHT11)`  
+- `Sensor de ultrasonidos (HC-SR04)`  
+- `Arduino Uno`
 
 ## Recursos Software
 
-El programa se estructura mediante una **máquina de estados**, controlada por:
+El programa se estructura en **estados** controlados por una variable global `state`.  
+Cada estado representa una fase distinta del funcionamiento de la máquina:
 
-```cpp
-enum STATES {
-  INIT,
-  WAIT_FOR_CLIENT,
-  MENU_COFFEE,
-  COFFEE_SELECTED,
-  COFFEE_FINISHED,
-  ADMIN,
-  DISTANCE,
-  TEMP_HUM,
-  TIME,
-  PRICES,
-  MODIFY
-};
-```
+- Estado de inicio / arranque  
+- Estados de servicio (detección de cliente, información, menú, dispensado)  
+- Estado de administración (admin)
 
-Se emplean:
+A lo largo del programa se utilizan:
 
-- Temporización con `millis()`
-- Interrupciones en el botón y el joystick  
-- Threads cooperativos (`Thread.h`)  
-- Watchdog (`avr/wdt.h`) para reinicios automáticos  
+- **Temporización con `millis()`** (sin `delay()`)  
+- **Interrupciones** para el botón y el joystick  
+- **Threads** (con `Thread.h`) para tareas periódicas como la lectura del sensor de ultrasonidos  
+- **Watchdog** (`avr/wdt.h`) para añadir robustez ante posibles bloqueos
 
----
+### Inicio
 
-## Inicio
+En el estado inicial, el sistema realiza dos acciones:
 
-Al iniciar:
+- El `LED rojo` parpadea **3 veces**.  
+- La pantalla LCD muestra el mensaje `[CARGANDO...]`.
 
-- El LED rojo parpadea 3 veces  
-- El LCD muestra `[CARGANDO...]`  
-- Se configuran interrupciones  
-- Se pasa a `WAIT_FOR_CLIENT`  
+Para implementar esto, **no se utiliza `delay()`**, ya que bloquearía el flujo del programa y haría que el sistema dejara de ser reactivo.  
+En su lugar:
 
-### Parpadeo sin bloqueos
+- Se usa la función `millis()`, que devuelve el tiempo transcurrido desde que se encendió la placa.  
+- Se ha creado una función `clock_timer(...)` que recibe como parámetro un intervalo de tiempo y comprueba si ha transcurrido o no.  
+- De esta manera, el parpadeo del LED rojo y el mensaje de carga se gestionan de forma **no bloqueante**.
 
-```cpp
-void parpadear_led() {
-  if (clock_timer(last_led1_time, LED_INTERVAL)) {
-    led_1_state = !led_1_state;
-    iteracion++;
-  }
-  digitalWrite(LED_RED_PIN, led_1_state);
-}
-```
+Una vez que el LED rojo termina de parpadear, se actualiza la variable `state` para pasar al siguiente estado (inicio del servicio).
 
-### Temporizador no bloqueante
+Las **interrupciones** del botón normal y del pulsador del joystick se **inicializan en este momento**, y no antes, por dos razones principales:
 
-```cpp
-bool clock_timer(unsigned long &last, unsigned long interval) {
-  unsigned long now = millis();
-  if (now - last >= interval) {
-    last = now;
-    return true;
-  }
-  return false;
-}
-```
+1. Si se activan en el `setup()`, existe la posibilidad de que, si el usuario pulsa el botón justo al arrancar, se “salte” la fase de `CARGANDO...` y `ESPERANDO CLIENTE` y el sistema pase directamente al modo servicio o admin.  
+2. No se pueden desactivar las interrupciones sin afectar a `millis()`, ya que si se desactivan las interrupciones del microcontrolador, `millis()` deja de actualizarse.
 
----
+Por tanto, la solución adoptada es **activar las interrupciones después de la secuencia de arranque**, cuando el sistema ya está estable y listo para interactuar con el usuario.
 
-## Servicio
+### Servicio
 
-### 1. Detección de cliente
+La parte de servicio se ha dividido en **cuatro estados** principales:
 
-```cpp
-dhtThread.onRun(dhtCallback);
-dhtThread.setInterval(DHT_INTERVAL);
-```
+1. **Detección de cliente (sensor ultrasonidos)**  
+   - Se utiliza un **thread** para leer periódicamente el sensor de ultrasonidos sin bloquear el programa.  
+   - El sistema permanece en este estado hasta que detecta que alguien se acerca a menos de **1 metro** de distancia.  
+   - Cuando esto ocurre, el estado cambia automáticamente al siguiente.
 
-Lectura HC-SR04:
+2. **Mostrar temperatura y humedad (DHT11)**  
+   - En este estado, la pantalla LCD muestra la **temperatura** y la **humedad relativa** medida por el sensor DHT11.  
+   - Esta información se mantiene en pantalla durante unos **5 segundos**, gestionados con `millis()` y la función `clock_timer(...)`.  
+   - Tras esos 5 segundos, se cambia al estado del menú.
 
-```cpp
-long read_distance() {
-  digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
-  digitalWrite(TRIG_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIG_PIN, LOW);
+3. **Menú de selección de bebida (joystick)**  
+   - En este estado, el display muestra un **menú de bebidas** con sus precios.  
+   - La navegación por el menú se hace con el joystick:
+     - Mover el joystick **hacia abajo** avanza en las opciones.  
+     - Mover el joystick **hacia arriba** retrocede en las opciones.  
+   - Para **seleccionar** una bebida, se pulsa el botón integrado en el joystick (detectado por interrupción).
 
-  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
-  if (duration == 0) return -1;
+4. **Dispensado de bebida (LED verde + texto)**  
+   - Una vez elegida la bebida, se entra en un estado de “dispensando”:  
+     - Durante un tiempo aleatorio entre **4 y 8 segundos** (controlado con `millis()`), el **LED verde incrementa progresivamente su intensidad** utilizando PWM (por ejemplo, con `analogWrite`), simulando el proceso de llenado.  
+     - Cuando el LED llega a la intensidad máxima y se ha cumplido el tiempo aleatorio, el LCD muestra el mensaje `"RETIRE BEBIDA"`.  
+   - Al finalizar este estado, se vuelve al estado de detección de cliente, completando el ciclo de servicio.
 
-  return duration * 0.0343f / 2.0f;
-}
-```
+Además, en **cualquier momento del servicio**, si el usuario pulsa el botón **2–3 segundos**, el sistema interpreta la pulsación como un retorno manual y **vuelve al estado de servicio inicial**, permitiendo reiniciar el flujo sin necesidad de completar el proceso.
 
----
+### Admin
 
-### 2. Mostrar temperatura y humedad
+El sistema cuenta con un **modo administrador** accesible con una pulsación larga del botón:
 
-```cpp
-lcd.setCursor(0, 0);
-lcd.print("Temp: ");
-lcd.print(temperature);
-lcd.print("C");
+- Para entrar o salir del modo admin, es necesario pulsar el botón durante **5 segundos o más**.  
+- Si se detecta una pulsación larga y **no estamos** en admin, se entra en el menú de administración.  
+- Si ya estamos en admin y se vuelve a pulsar 5 segundos, se sale de este modo y se regresa al flujo normal.
 
-lcd.setCursor(0, 1);
-lcd.print("Humd: ");
-lcd.print(humidity);
-lcd.print("%");
-```
+Dentro del menú admin se pueden realizar varias acciones:
 
----
+- Consultar la **distancia** medida por el sensor de ultrasonidos.  
+- Ver la **temperatura y humedad** actual.  
+- Consultar el **contador** de servicios (por ejemplo, cuántas bebidas se han dispensado).  
+- **Modificar los precios** de las bebidas, subiéndolos o bajándolos de **5 en 5 céntimos** utilizando el joystick:
+  - Mover el joystick hacia arriba/bajo cambia el precio.  
+  - El pulsador del joystick se puede utilizar para confirmar o moverse entre campos.
 
-### 3. Menú de bebidas
+Además, si el usuario pulsa el botón **2–3 segundos mientras está en admin**, el sistema cancela la administración y **vuelve directamente al servicio**, evitando tener que navegar hasta la opción de salida.
 
-```cpp
-int joystick(byte axis) {
-  int value = analogRead(axis == 1 ? X_JOYSTICK : Y_JOYSTICK);
-  if (value <= 400) return 1;
-  if (value > 900) return -1;
-  return 0;
-}
-```
+## Librerías empleadas
 
----
+En el desarrollo del proyecto se han utilizado las siguientes librerías:
 
-### 4. Dispensado
+- `LiquidCrystal.h`  
+  Para el control de la pantalla LCD (inicialización, posicionamiento del cursor, impresión de textos, etc.).
 
-```cpp
-brightness = (elapsed * 255) / total_ms;
-analogWrite(LED_GREEN_PIN, brightness);
-lcd.print("RETIRE BEBIDA");
-```
+- `DHT.h`  
+  Para la lectura del sensor de **temperatura y humedad**, gestionando el protocolo y el cálculo de los valores.
 
----
+- `Thread.h`  
+  Para implementar **threads cooperativos**, que permiten ejecutar tareas periódicas (como la lectura del sensor de ultrasonidos) sin bloquear el bucle principal.
 
-## Modo Administrador
+- `avr/wdt.h`  
+  Para configurar el **watchdog timer** y conseguir que el sistema se reinicie automáticamente en caso de bloqueo o fallo grave.
 
-```cpp
-if (pressed) {
-  pressed = false;
-  byte action_admin = action_from_option(action);
-}
-```
+## Demostración del funcionamiento
 
-```cpp
-if (lecture == -1) price += 0.05;
-else if (lecture == 1) price -= 0.05;
-```
-
----
+[![Vídeo de demostración](https://img.youtube.com/vi/IHMvAtmqGPg/0.jpg)](https://www.youtube.com/watch?v=IHMvAtmqGPg)
 
 ## Esquemático del circuito
 
-Incluye un diagrama creado en Fritzing o Tinkercad mostrando todas las conexiones de:
+A continuación se muestra el **esquemático del circuito**, donde se pueden ver las conexiones de todos los componentes (LCD, joystick, LEDs, botón, sensor DHT, sensor de ultrasonidos y Arduino Uno):
 
-- LCD  
-- Joystick  
-- LED verde y rojo  
-- Botón externo  
-- DHT11  
-- HC-SR04  
-<img width="624" alt="imagen" src="https://github.com/user-attachments/assets/9c5ce90a-8a6a-49a2-b314-4e8a3cb46602" />
-
----
-
-## Vídeo de demostración
-
-Incluye un vídeo explicando funcionamiento y lógica del sistema.  
-
-**Enlace al vídeo:**  
-[![Ver en YouTube](https://img.youtube.com/vi/IHMvAtmqGPg/maxresdefault.jpg)](https://youtube.com/shorts/IHMvAtmqGPg)
-
-
----
+<img width="624" alt="imagen" src="https://github.com/user-attachments/assets/b47fbb33-87e9-4d95-9651-2c41dc1c508e" />
 
 ## Conclusiones
 
-La práctica ha permitido integrar sensores, actuadores y una arquitectura basada en máquina de estados.  
-Se ha trabajado con programación reactiva sin bloqueos, interrupciones, threads cooperativos y watchdog para asegurar un sistema robusto y estable.
+La práctica ha servido para montar y programar una máquina expendedora completa usando Arduino Uno. Durante el proyecto se ha trabajado con una máquina de estados clara, temporización sin bloqueos usando millis(), interrupciones para que el sistema responda rápido, y threads para gestionar tareas periódicas sin cargar el loop(). También se ha añadido un watchdog para evitar bloqueos y un modo administrador con lectura de sensores y ajuste de precios.
+
+En resumen, ha sido un proyecto muy útil para entender cómo combinar sensores, actuadores y lógica de control en un sistema embebido real, manteniendo siempre la reactividad y una interfaz sencilla para el usuario.
