@@ -54,12 +54,12 @@ Se emplean:
 
 ## Inicio
 
-En el arranque:
+Al iniciar:
 
 - El LED rojo parpadea 3 veces  
-- La pantalla muestra `[CARGANDO...]`  
-- Se activan interrupciones  
-- Se pasa al estado `WAIT_FOR_CLIENT`  
+- El LCD muestra `[CARGANDO...]`  
+- Se configuran interrupciones  
+- Se pasa a `WAIT_FOR_CLIENT`  
 
 ### Parpadeo sin bloqueos
 
@@ -97,6 +97,8 @@ dhtThread.onRun(dhtCallback);
 dhtThread.setInterval(DHT_INTERVAL);
 ```
 
+Lectura HC-SR04:
+
 ```cpp
 long read_distance() {
   digitalWrite(TRIG_PIN, LOW);
@@ -112,6 +114,8 @@ long read_distance() {
 }
 ```
 
+---
+
 ### 2. Mostrar temperatura y humedad
 
 ```cpp
@@ -126,6 +130,8 @@ lcd.print(humidity);
 lcd.print("%");
 ```
 
+---
+
 ### 3. Menú de bebidas
 
 ```cpp
@@ -136,6 +142,8 @@ int joystick(byte axis) {
   return 0;
 }
 ```
+
+---
 
 ### 4. Dispensado
 
@@ -163,15 +171,31 @@ else if (lecture == 1) price -= 0.05;
 
 ---
 
-## Librerías empleadas
+## Esquemático del circuito
 
-- LiquidCrystal.h
-- DHT.h
-- Thread.h
-- avr/wdt.h
+Incluye un diagrama creado en Fritzing o Tinkercad mostrando todas las conexiones de:
+
+- LCD  
+- Joystick  
+- LED verde y rojo  
+- Botón externo  
+- DHT11  
+- HC-SR04  
+
+*(Inserta aquí tu imagen cuando la tengas)*
+
+---
+
+## Vídeo de demostración
+
+Incluye un vídeo explicando funcionamiento y lógica del sistema.  
+
+**Enlace al vídeo:**  
+[https://youtu.be/TU_LINK_AQUI](https://youtu.be/TU_LINK_AQUI)
 
 ---
 
 ## Conclusiones
 
-La práctica ha permitido desarrollar una máquina expendedora completa combinando sensores, actuadores y lógica de control.
+La práctica ha permitido integrar sensores, actuadores y una arquitectura basada en máquina de estados.  
+Se ha trabajado con programación reactiva sin bloqueos, interrupciones, threads cooperativos y watchdog para asegurar un sistema robusto y estable.
