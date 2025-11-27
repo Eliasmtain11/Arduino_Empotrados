@@ -284,7 +284,7 @@ void preprare_coffee() {
 }
 
 void extract_coffee() {
-  if(!(temporizador(timer,TAKE_DRINK_TIME))) {
+  if(!(clock_timer(timer,TAKE_DRINK_TIME))) {
     lcd.setCursor(5,0);
     lcd.print("RETIRE   ");
     lcd.setCursor(5,1);
@@ -442,7 +442,7 @@ float modify_price(char* type, float price) {
 }
 
 void show_distance() {
-  if(temporizador(timer,SHOW_DISTANCE_TIME)){
+  if(clock_timer(timer,SHOW_DISTANCE_TIME)){
     long dist = read_distance();
     lcd.setCursor(4, 0);
     lcd.print("Distance");
@@ -560,7 +560,7 @@ void dhtCallback() {
     return;
   }
   
-  if (temporizador(timer, SERVICE_DURATION)) {
+  if (clock_timer(timer, SERVICE_DURATION)) {
     state = MENU_COFFEE;
     dhtThread.enabled = false;
     lcd.clear();
@@ -583,7 +583,7 @@ void dhtCallback() {
 }
 
 void parpadear_led() {
-  if (temporizador(last_led1_time, LED_INTERVAL)) {
+  if (clock_timer(last_led1_time, LED_INTERVAL)) {
     led_1_state = !led_1_state;
     iteracion++;
   }
@@ -595,7 +595,7 @@ void parpadear_led() {
 
 }
 
-bool temporizador(unsigned long &last, unsigned long interval) {
+bool clock_timer(unsigned long &last, unsigned long interval) {
   unsigned long now = millis();
   if (now - last >= interval) {
     last = now;
